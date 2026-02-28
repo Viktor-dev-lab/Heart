@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trái Tim Đập Bầu Bĩnh</title>
+    <style>
+        :root {
+            /* === CHỈNH LỜI NHẮN VÀ MÀU SẮC TẠI ĐÂY === */
+            --heart-color: #f76070; /* Màu trái tim */
+            --text-color: #FFFFFF;  /* Màu chữ */
+            --text-message: ""; /* Nội dung lời nhắn */
+        }
+
+        body {
+            background-color: black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            background-color: black;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="heartCanvas" width="800" height="600"></canvas>
+
+<script>
+    const canvas = document.getElementById('heartCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Cấu hình thông số 
+    const CANVAS_WIDTH = 800;
+    const CANVAS_HEIGHT = 600;
+    const CANVAS_CENTER_X = CANVAS_WIDTH / 2;
+    const CANVAS_CENTER_Y = CANVAS_HEIGHT / 2;
+    const IMAGE_ENLARGE = 15; // Tăng kích thước tổng thể từ 11 lên 15
+
+    // Lấy thông số từ CSS
+    const rootStyle = getComputedStyle(document.documentElement);
+    const HEART_COLOR = rootStyle.getPropertyValue('--heart-color').trim();
+    const TEXT_COLOR = rootStyle.getPropertyValue('--text-color').trim();
+    const TEXT_MESSAGE = rootStyle.getPropertyValue('--text-message').trim().replace(/"/g, ''); 
+
+    // === 1. TẠO HÌNH TRÁI TIM BẦU BĨNH ===
+    function heartFunction(t, shrinkRatio = IMAGE_ENLARGE) {
+        // Tăng hệ số sin(t)^3 từ 16 lên 19 để làm tim mập hơn về chiều ngang
+        let x = 19 * Math.pow(Math.sin(t), 3);
+        let y = -(14 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+        x *= shrinkRatio;
+        y *= shrinkRatio;
+        x += CANVAS_CENTER_X;
+        y += CANVAS_CENTER_Y;
+        return [Math.floor(x), Math.floor(y)];
+    }
+
+    function scatterInside(x, y, beta = 0.15) {
+        let ratioX = -beta * Math.log(Math.random());
+        let ratioY = -beta * Math.log(Math.random());
+        let dx = ratioX * (x - CANVAS_CENTER_X);
+        let dy = ratioY * (y - CANVAS_CENTER_Y);
+        return [x - dx, y - dy];
+    }
+
+    function shrink(x, y, ratio) {
+        let force = -1 / Math.pow(Math.pow(x - CANVAS_CENTER_X, 2) + Math.pow(y - CANVAS_CENTER_Y, 2), 0.6);
+        let dx = ratio * force * (x - CANVAS_CENTER_X);
+        let dy = ratio * force * (y - CANVAS_CENTER_Y);
+        return [x - dx, y - dy];
+    }
+
+    // === 2. HÀM TẠO NHỊP ĐẬP "LUB-DUB" THỰC TẾ ===
+    function getHeartbeatRatio(frame) {
+        // Mô phỏng nhịp tim: 1 nhịp mạnh (Lub), 1 nhịp yếu hơn (Dub), rồi nghỉ.
+        if (frame < 10) {
+            // Nhịp 1: Co bóp mạnh
+            return Math.sin((frame / 10) * Math.PI) * 15; 
+        } else if (frame >= 12 && frame < 20) {
+            // Nhịp 2: Dư chấn nhẹ hơn
+            return Math.sin(((frame - 12) / 8) * Math.PI) * 8; 
+        } else {
+            // Giai đoạn nghỉ (từ frame 20 đến 40)
+            return 0;
+        }
+    }
+
+    // Lớp Heart quản lý khung hình
+    class Heart {
+        // Tăng số khung hình (generateFrame) lên 40 để nhịp tim mượt mà hơn
+        constructor(generateFrame = 40) {
+            this.points = [];
+            this.edgeDiffusionPoints = [];
+            this.centerDiffusionPoints = [];
+            this.allPoints = {};
+            this.generateFrame = generateFrame;
+
+            this.build(2500); // Tăng mật độ hạt để tim to không bị thưa
+            for (let frame = 0; frame < generateFrame; frame++) {
+                this.calc(frame);
+            }
+        }
+
+        build(number) {
+            let pointSet = new Set();
+            for (let i = 0; i < number; i++) {
+                let t = Math.random() * 2 * Math.PI;
+                let [x, y] = heartFunction(t);
+                pointSet.add(`${x},${y}`);
+            }
+
+            this.points = Array.from(pointSet).map(str => {
+                let parts = str.split(',');
+                return [parseFloat(parts[0]), parseFloat(parts[1])];
+            });
+
+            this.points.forEach(([x, y]) => {
+                for (let i = 0; i < 3; i++) {
+                    let [nx, ny] = scatterInside(x, y, 0.05);
+                    this.edgeDiffusionPoints.push([nx, ny]);
+                }
+            });
+
+            for (let i = 0; i < 4000; i++) {
+                let [x, y] = this.points[Math.floor(Math.random() * this.points.length)];
+                let [nx, ny] = scatterInside(x, y, 0.17);
+                this.centerDiffusionPoints.push([nx, ny]);
+            }
+        }
+
+        calcPosition(x, y, ratio) {
+            let force = 1 / Math.pow(Math.pow(x - CANVAS_CENTER_X, 2) + Math.pow(y - CANVAS_CENTER_Y, 2), 0.520);
+            let dx = ratio * force * (x - CANVAS_CENTER_X) + (Math.floor(Math.random() * 3) - 1);
+            let dy = ratio * force * (y - CANVAS_CENTER_Y) + (Math.floor(Math.random() * 3) - 1);
+            return [x - dx, y - dy];
+        }
+
+        calc(frame) {
+            // Sử dụng nhịp đập Lub-Dub
+            let ratio = getHeartbeatRatio(frame);
+            
+            let haloRadius = Math.floor(4 + 6 * (1 + ratio / 10));
+            let haloNumber = Math.floor(3000 + 4000 * Math.abs(ratio / 10));
+
+            let allPoints = [];
+            let heartHaloPoint = new Set();
+
+            for (let i = 0; i < haloNumber; i++) {
+                let t = Math.random() * 2 * Math.PI;
+                let [x, y] = heartFunction(t, 15.6); // Mở rộng vầng hào quang
+                [x, y] = shrink(x, y, haloRadius);
+                
+                let key = `${Math.floor(x)},${Math.floor(y)}`;
+                if (!heartHaloPoint.has(key)) {
+                    heartHaloPoint.add(key);
+                    x += Math.floor(Math.random() * 29) - 14; 
+                    y += Math.floor(Math.random() * 29) - 14;
+                    let size = [1, 2, 2][Math.floor(Math.random() * 3)];
+                    allPoints.push([x, y, size]);
+                }
+            }
+
+            this.points.forEach(([x, y]) => {
+                let [nx, ny] = this.calcPosition(x, y, ratio);
+                let size = Math.floor(Math.random() * 3) + 1;
+                allPoints.push([nx, ny, size]);
+            });
+
+            this.edgeDiffusionPoints.forEach(([x, y]) => {
+                let [nx, ny] = this.calcPosition(x, y, ratio);
+                let size = Math.floor(Math.random() * 2) + 1;
+                allPoints.push([nx, ny, size]);
+            });
+
+            this.centerDiffusionPoints.forEach(([x, y]) => {
+                let [nx, ny] = this.calcPosition(x, y, ratio);
+                let size = Math.floor(Math.random() * 2) + 1;
+                allPoints.push([nx, ny, size]);
+            });
+
+            this.allPoints[frame] = allPoints;
+        }
+
+        render(ctx, renderFrame) {
+            let framePoints = this.allPoints[renderFrame % this.generateFrame];
+            ctx.fillStyle = HEART_COLOR;
+            for (let i = 0; i < framePoints.length; i++) {
+                let [x, y, size] = framePoints[i];
+                ctx.fillRect(x, y, size, size);
+            }
+        }
+    }
+
+    // Khởi tạo và chạy vòng lặp
+    const heart = new Heart();
+    let renderFrame = 0;
+
+    function draw() {
+        ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        heart.render(ctx, renderFrame);
+        drawTextMessage();
+        
+        renderFrame++;
+        // Giảm delay xuống 30ms kết hợp 40 frame = 1.2s cho mỗi nhịp tim (rất mượt)
+        setTimeout(draw, 30); 
+    }
+
+    function drawTextMessage() {
+        ctx.fillStyle = TEXT_COLOR;
+        ctx.font = 'bold 36px Arial'; 
+        ctx.textAlign = 'center'; 
+        ctx.textBaseline = 'middle'; 
+        ctx.fillText(TEXT_MESSAGE, CANVAS_CENTER_X, CANVAS_CENTER_Y);
+    }
+
+    draw();
+</script>
+
+</body>
+</html>
